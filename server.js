@@ -30,7 +30,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const letterSessions = new Map();
 
 // Configuration for quality filtering
-const MIN_CONFIDENCE = parseFloat(process.env.MIN_CONFIDENCE) || 0.9; // Only accept predictions above 70% confidence
+const MIN_CONFIDENCE =  0.7; // Only accept predictions above 70% confidence
 const STABILITY_COUNT = parseInt(process.env.STABILITY_COUNT) || 3; // Require same letter 3 times in a row
 
 function normalizeLetter(letter) {

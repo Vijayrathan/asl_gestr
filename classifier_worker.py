@@ -6,68 +6,72 @@ from typing import Tuple
 
 import cv2
 import numpy as np
-import tensorflow as tf
+import torch
+from PIL import Image
+from transformers import AutoImageProcessor, SiglipForImageClassification
 
-MODEL_PATH = os.environ.get("ASL_MODEL_PATH", "asl_model.keras")
-CLASS_MAP_PATH = os.environ.get("ASL_CLASS_MAP_PATH", "asl_class_map.npy")
-IMG_SIZE = int(os.environ.get("ASL_IMG_SIZE", "224"))
+MODEL_NAME = os.environ.get("ASL_MODEL_NAME", "prithivMLmods/Alphabet-Sign-Language-Detection")
 
 
 def _log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
-def _load_artifacts() -> Tuple[tf.keras.Model, dict]:
-    if not os.path.exists(MODEL_PATH):
-        raise FileNotFoundError(f"Model not found at {MODEL_PATH}")
-
-    if not os.path.exists(CLASS_MAP_PATH):
-        raise FileNotFoundError(f"Class map not found at {CLASS_MAP_PATH}")
-
-    _log(f"Loading ASL model from {MODEL_PATH}")
-    model = tf.keras.models.load_model(MODEL_PATH)
-
-    _log(f"Loading class map from {CLASS_MAP_PATH}")
-    class_map = np.load(CLASS_MAP_PATH, allow_pickle=True).item()
-    return model, class_map
+def _load_artifacts():
+    _log(f"Loading HuggingFace ASL model: {MODEL_NAME}")
+    model = SiglipForImageClassification.from_pretrained(MODEL_NAME)
+    processor = AutoImageProcessor.from_pretrained(MODEL_NAME)
+    return model, processor
 
 
-MODEL, CLASS_MAP = _load_artifacts()
+MODEL, PROCESSOR = _load_artifacts()
+
+# Class mapping from model indices to letters
+LABELS = {
+    "0": "A", "1": "B", "2": "C", "3": "D", "4": "E", "5": "F", "6": "G", "7": "H", "8": "I", "9": "J",
+    "10": "K", "11": "L", "12": "M", "13": "N", "14": "O", "15": "P", "16": "Q", "17": "R", "18": "S", "19": "T",
+    "20": "U", "21": "V", "22": "W", "23": "X", "24": "Y", "25": "Z"
+}
 
 
-def _decode_image(image_b64: str) -> np.ndarray:
+def _decode_image(image_b64: str) -> Image.Image:
     if "," in image_b64:
         image_b64 = image_b64.split(",", 1)[1]
 
     image_bytes = base64.b64decode(image_b64)
     np_arr = np.frombuffer(image_bytes, np.uint8)
-    img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+    img_bgr = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-    if img is None:
+    if img_bgr is None:
         raise ValueError("Unable to decode image data")
 
-    return img
-
-
-def _preprocess(image_bgr: np.ndarray) -> np.ndarray:
-    resized = cv2.resize(image_bgr, (IMG_SIZE, IMG_SIZE))
-    rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-    normalized = rgb.astype(np.float32) / 255.0
-    return np.expand_dims(normalized, axis=0)
+    # Convert BGR to RGB
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    # Convert to PIL Image
+    image = Image.fromarray(img_rgb).convert("RGB")
+    return image
 
 
 def predict_letter(image_b64: str) -> Tuple[str, float]:
-    frame = _decode_image(image_b64)
-    input_tensor = _preprocess(frame)
-    preds = MODEL.predict(input_tensor, verbose=0)
-    class_id = int(np.argmax(preds))
-    confidence = float(preds[0][class_id])
-    letter = CLASS_MAP.get(class_id, "?")
-
-    if not isinstance(letter, str):
-        letter = str(letter)
-
+    image = _decode_image(image_b64)
+    
+    # Preprocess image using HuggingFace processor
+    inputs = PROCESSOR(images=image, return_tensors="pt")
+    
+    # Run inference
+    with torch.no_grad():
+        outputs = MODEL(**inputs)
+        logits = outputs.logits
+        probs = torch.nn.functional.softmax(logits, dim=1).squeeze()
+    
+    # Get predicted class
+    class_id = int(torch.argmax(probs).item())
+    confidence = float(probs[class_id].item())
+    
+    # Map class ID to letter
+    letter = LABELS.get(str(class_id), "?")
     letter = letter.strip().upper()
+    
     return letter, confidence
 
 

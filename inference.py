@@ -1,34 +1,37 @@
 import cv2
 import numpy as np
-import tensorflow as tf
+import torch
+from PIL import Image
+from transformers import AutoImageProcessor, SiglipForImageClassification
 
 # --------------------------------------------------
-# Load model + class map
+# Load model + processor
 # --------------------------------------------------
 
-MODEL_PATH = "asl_model.keras"          # your new Keras model format
-CLASS_MAP_PATH = "asl_class_map.npy"
+MODEL_NAME = "prithivMLmods/Alphabet-Sign-Language-Detection"
 
-print("Loading model...")
-model = tf.keras.models.load_model(MODEL_PATH)
+print("Loading HuggingFace model...")
+model = SiglipForImageClassification.from_pretrained(MODEL_NAME)
+processor = AutoImageProcessor.from_pretrained(MODEL_NAME)
 
-print("Loading class map...")
-class_map = np.load(CLASS_MAP_PATH, allow_pickle=True).item()
-
-IMG_SIZE = 224
+# Class mapping from model indices to letters
+LABELS = {
+    "0": "A", "1": "B", "2": "C", "3": "D", "4": "E", "5": "F", "6": "G", "7": "H", "8": "I", "9": "J",
+    "10": "K", "11": "L", "12": "M", "13": "N", "14": "O", "15": "P", "16": "Q", "17": "R", "18": "S", "19": "T",
+    "20": "U", "21": "V", "22": "W", "23": "X", "24": "Y", "25": "Z"
+}
 
 # --------------------------------------------------
-# Preprocess a frame for MobileNetV2
+# Preprocess a frame for HuggingFace model
 # --------------------------------------------------
 def preprocess(frame):
-    # Resize to 224×224
-    frame_resized = cv2.resize(frame, (IMG_SIZE, IMG_SIZE))
-    # Convert BGR (OpenCV) to RGB (TensorFlow)
-    frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
-    # Normalize to [0,1]
-    frame_norm = frame_rgb.astype(np.float32) / 255.0
-    # Add batch dimension
-    return np.expand_dims(frame_norm, axis=0)
+    # Convert BGR (OpenCV) to RGB
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    # Convert to PIL Image
+    image = Image.fromarray(frame_rgb).convert("RGB")
+    # Process using HuggingFace processor
+    inputs = processor(images=image, return_tensors="pt")
+    return inputs
 
 # --------------------------------------------------
 # Webcam Live Loop
@@ -46,17 +49,22 @@ while True:
         continue
 
     # Prepare frame
-    x = preprocess(frame)
+    inputs = preprocess(frame)
 
     # Predict ASL letter
-    preds = model.predict(x, verbose=0)
-    class_id = np.argmax(preds)
-    class_label = class_map[class_id]
+    with torch.no_grad():
+        outputs = model(**inputs)
+        logits = outputs.logits
+        probs = torch.nn.functional.softmax(logits, dim=1).squeeze()
+    
+    class_id = int(torch.argmax(probs).item())
+    confidence = float(probs[class_id].item())
+    class_label = LABELS.get(str(class_id), "?")
 
     # Draw prediction on video
     cv2.putText(
         frame,
-        f"Prediction: {class_label}",
+        f"Prediction: {class_label} ({confidence:.2f})",
         (20, 40),
         cv2.FONT_HERSHEY_SIMPLEX,
         1.1,
