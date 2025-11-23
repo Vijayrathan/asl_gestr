@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1"
+    />
+    <title>Gestr · ASL Fingerspelling Assistant</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>Gestr</h1>
+        <p>Spell letters with ASL, turn them into fluent English.</p>
+      </header>
+
+      <section class="video-panel">
+        <video id="camera" autoplay playsinline muted></video>
+        <canvas id="frame-canvas" width="640" height="480"></canvas>
+      </section>
+
+      <section class="controls">
+        <button id="start-btn" class="primary">Start Camera</button>
+        <button id="stop-btn" class="secondary">Stop Camera</button>
+        <button id="send-btn" class="accent">Send to Gemini</button>
+        <button id="clear-btn" class="ghost">Clear</button>
+      </section>
+
+      <section class="status-grid">
+        <div class="card">
+          <span class="label">Latest Letter</span>
+          <p id="latest-letter" class="value large">--</p>
+        </div>
+        <div class="card">
+          <span class="label">Confidence</span>
+          <p id="confidence" class="value">--</p>
+        </div>
+        <div class="card wide">
+          <span class="label">Accumulated Text</span>
+          <p id="accumulated-text" class="value monospace">Nothing yet</p>
+        </div>
+        <div class="card wide">
+          <span class="label">Gemini Sentence</span>
+          <p id="gemini-output" class="value">Waiting for send...</p>
+        </div>
+      </section>
+
+      <section class="logs" id="status-log">Ready.</section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
+
